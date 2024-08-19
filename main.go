@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -9,34 +10,39 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/getlantern/systray"
 	"github.com/go-vgo/robotgo"
-	hook "github.com/robotn/gohook"
+	"golang.design/x/hotkey"
+	"golang.design/x/hotkey/mainthread"
 )
 
 const (
-	shortcutKey1 = "]"
-	shortcutKey2 = "ctrl"
-	shortcutKey3 = "shift"
-	sleepTime    = 200 * time.Millisecond
+	sleepTime = 200 * time.Millisecond
 )
 
-var sensitiveApps = []string{"windows terminal", "windows powershell"}
+var sensitiveApps = []string{"windows terminal", "notepad"}
 
 func main() {
-	go runHotkey()
+	go mainthread.Init(shortcut)
 	systray.Run(onReady, onExit)
+
 }
+func shortcut() {
+	hk := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModAlt}, hotkey.KeyV)
+	err := hk.Register()
+	if err != nil {
+		log.Fatalf("hotkey: failed to register hotkey: %v", err)
+		return
+	}
 
-func runHotkey() {
-	fmt.Println("Improved Paste Tool")
-	fmt.Println("Press Ctrl+Shift+] to activate quick paste from clipboard")
+	fmt.Printf("hotkey: %v is registered\n", hk)
 
-	hook.Register(hook.KeyDown, []string{shortcutKey1, shortcutKey2, shortcutKey3}, func(e hook.Event) {
-		fmt.Println("Shortcut detected, pasting text from clipboard...")
-		go pasteFromClipboard()
-	})
+	for {
+		<-hk.Keydown()
+		fmt.Printf("hotkey: %v is down\n", hk)
+		<-hk.Keyup()
+		fmt.Println("Pasting from clipboard...")
+		pasteFromClipboard()
+	}
 
-	s := hook.Start()
-	<-hook.Process(s)
 }
 
 func onReady() {
@@ -159,7 +165,9 @@ func getIcon() []byte {
 }
 
 func isWindowSensitive(windowName string) bool {
+	// Checks for any applications that may cause issues
 	lowercaseWindowName := strings.ToLower(windowName)
+	print("Detected Window: ", lowercaseWindowName)
 	for _, app := range sensitiveApps {
 		if strings.Contains(lowercaseWindowName, app) {
 			return true
@@ -183,6 +191,15 @@ func pasteFromClipboard() {
 	if isWindowSensitive(activeWindow) {
 		robotgo.KeyTap("v", "control")
 	} else {
-		robotgo.TypeStr(text)
+		// Split the text into lines
+		lines := strings.Split(text, "\n")
+		for i, line := range lines {
+			if i > 0 {
+				// Press Enter for each new line except the first
+				robotgo.KeyTap("enter")
+			}
+			// Type the line
+			robotgo.TypeStr(line)
+		}
 	}
 }
